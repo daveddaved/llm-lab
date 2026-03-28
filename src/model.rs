@@ -123,6 +123,10 @@ impl Config {
 // with random values for demonstration.
 // ---------------------------------------------------------------------------
 
+// REVIEW: Derive Clone so beam search and multi-run scenarios can share weights
+// without reloading from disk. Each TransformerWeights load is ~60MB of disk I/O
+// for stories15M; the original beam_search was reloading per beam candidate per step.
+#[derive(Clone)]
 pub struct TransformerWeights {
     // Token embedding table: [vocab_size, dim]
     // Row i = the vector representation of token i
@@ -140,6 +144,8 @@ pub struct TransformerWeights {
     pub output: Tensor,
 }
 
+// REVIEW: Derive Clone needed for TransformerWeights to be cloneable.
+#[derive(Clone)]
 pub struct LayerWeights {
     // Attention
     pub rms_att: Tensor,       // [dim] — RMSNorm before attention
@@ -406,6 +412,21 @@ pub struct RunState {
 
     // Output logits: [vocab_size]
     pub logits: Tensor,
+
+    // -----------------------------------------------------------------------
+    // ATTENTION CAPTURE (for deep-dive analysis)
+    // -----------------------------------------------------------------------
+    // When capture_attention is true, the forward pass saves the attention
+    // weight matrices (post-softmax) into this buffer. This is expensive
+    // (extra memory + copies), so it's disabled by default.
+    //
+    // Structure: attention_weights[layer][head] = Vec<f32> of length (pos+1),
+    // holding the attention weights from the LAST forward pass for that head
+    // on that layer. These weights show which positions the current token
+    // attended to.
+    // -----------------------------------------------------------------------
+    pub capture_attention: bool,
+    pub attention_weights: Vec<Vec<Vec<f32>>>,  // [n_layers][n_heads][pos+1]
 }
 
 impl RunState {
@@ -428,6 +449,8 @@ impl RunState {
                 .map(|_| Tensor::zeros(&[config.seq_len, kv_dim]))
                 .collect(),
             logits: Tensor::zeros(&[config.vocab_size]),
+            capture_attention: false,
+            attention_weights: Vec::new(),
         }
     }
 }
@@ -593,6 +616,21 @@ impl Transformer {
                         self.state.xb.data[q_offset + j] += weight * v_row[j];
                     }
                 }
+            }
+
+            // 2f-capture. If attention capture is enabled, save the attention
+            // weights for this layer. We do this AFTER all heads have computed
+            // their softmax'd attention but BEFORE the output projection.
+            // REVIEW: Guard with len() check for robustness — avoids panic if
+            // the caller forgot to pre-allocate attention_weights to n_layers.
+            if self.state.capture_attention && layer < self.state.attention_weights.len() {
+                // REVIEW: Use iterator collect instead of manual push loop for clarity.
+                self.state.attention_weights[layer] = (0..self.config.n_heads)
+                    .map(|h| {
+                        let att_offset = h * self.config.seq_len;
+                        self.state.att[att_offset..att_offset + pos + 1].to_vec()
+                    })
+                    .collect();
             }
 
             // 2f. Output projection: combine all heads back to [dim]

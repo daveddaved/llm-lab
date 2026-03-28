@@ -27,6 +27,18 @@ path = "src/milestone5.rs"
 name = "milestone6"
 path = "src/milestone6.rs"
 
+[[bin]]
+name = "deep-attention"
+path = "src/deep_attention.rs"
+
+[[bin]]
+name = "deep-embeddings"
+path = "src/deep_embeddings.rs"
+
+[[bin]]
+name = "deep-generation"
+path = "src/deep_generation.rs"
+
 [dependencies]
 
 # ---------------------------------------------------------------------------
