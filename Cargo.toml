@@ -1,0 +1,56 @@
+[package]
+name = "llm-lab"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "milestone1"
+path = "src/main.rs"
+
+[[bin]]
+name = "milestone2"
+path = "src/milestone2.rs"
+
+[[bin]]
+name = "milestone3"
+path = "src/milestone3.rs"
+
+[[bin]]
+name = "milestone4"
+path = "src/milestone4.rs"
+
+[[bin]]
+name = "milestone5"
+path = "src/milestone5.rs"
+
+[[bin]]
+name = "milestone6"
+path = "src/milestone6.rs"
+
+[dependencies]
+
+# ---------------------------------------------------------------------------
+# Release profile — maximum optimization for LLM inference
+# ---------------------------------------------------------------------------
+# LTO (Link-Time Optimization): LLVM optimizes across ALL crate boundaries
+# at link time, enabling inlining and dead code elimination that isn't possible
+# with separate compilation. This is crucial for auto-vectorization of our
+# matvec hot loop — the compiler can see through the Tensor abstraction.
+#
+# codegen-units = 1: Forces the compiler to use a single codegen unit,
+# allowing LLVM to optimize the ENTIRE crate as one compilation unit.
+# Default is 16 units (for faster compile times), which prevents some
+# cross-function optimizations. For inference performance, we want every
+# optimization possible — compile time doesn't matter.
+# ---------------------------------------------------------------------------
+[profile.release]
+# PERF: opt-level=3 enables maximum optimization including aggressive inlining,
+# loop unrolling, and auto-vectorization. The default for release is opt-level=2,
+# which skips some loop optimizations that matter for our matvec hot loop.
+opt-level = 3
+lto = true
+codegen-units = 1
+# NOTE: For additional ~10-20% speedup on your specific CPU, build with:
+#   RUSTFLAGS="-C target-cpu=native" cargo run --release --bin milestone6
+# This enables AVX2/AVX-512 if your CPU supports them. We don't set this as
+# default because it makes the binary non-portable to other machines.
